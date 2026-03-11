@@ -47,6 +47,24 @@ func TestRunServicesPropagatesContextCancellation(t *testing.T) {
 	}
 }
 
+func TestNewBaleHTTPClientAppliesMinimumTimeout(t *testing.T) {
+	t.Parallel()
+
+	client := newBaleHTTPClient(10 * time.Second)
+	if client.Timeout != time.Minute {
+		t.Fatalf("unexpected timeout: %s", client.Timeout)
+	}
+}
+
+func TestNewBaleHTTPClientExtendsLongPollTimeout(t *testing.T) {
+	t.Parallel()
+
+	client := newBaleHTTPClient(90 * time.Second)
+	if client.Timeout != 135*time.Second {
+		t.Fatalf("unexpected timeout: %s", client.Timeout)
+	}
+}
+
 type stubRunner struct {
 	canceled bool
 	run      func(context.Context) error

@@ -18,10 +18,13 @@ import (
 	"github.com/kave08/news/internal/telegram"
 )
 
+const (
+	baleHTTPTimeoutMargin = 45 * time.Second
+	baleHTTPMinTimeout    = time.Minute
+)
+
 func Run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
-	baleClient := bale.NewClient(cfg.Bale.BaseURL, cfg.Bale.Token, &http.Client{
-		Timeout: cfg.Bale.PollTimeout + 10*time.Second,
-	})
+	baleClient := bale.NewClient(cfg.Bale.BaseURL, cfg.Bale.Token, newBaleHTTPClient(cfg.Bale.PollTimeout))
 
 	var poster mattermost.Poster
 	switch cfg.Mattermost.Mode {
@@ -194,4 +197,12 @@ func toNewsSites(sites []config.NewsSiteConfig) []news.SiteConfig {
 		})
 	}
 	return newsSites
+}
+
+func newBaleHTTPClient(pollTimeout time.Duration) *http.Client {
+	timeout := pollTimeout + baleHTTPTimeoutMargin
+	if timeout < baleHTTPMinTimeout {
+		timeout = baleHTTPMinTimeout
+	}
+	return &http.Client{Timeout: timeout}
 }
