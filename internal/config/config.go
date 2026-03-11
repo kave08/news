@@ -34,10 +34,13 @@ type Config struct {
 }
 
 type BaleConfig struct {
-	Token          string
-	BaseURL        string
-	AllowedChatIDs map[int64]struct{}
-	PollTimeout    time.Duration
+	Token           string
+	BaseURL         string
+	AllowedChatIDs  map[int64]struct{}
+	AllowedHashtags []string
+	StripMentions   []string
+	StripPhrases    []string
+	PollTimeout     time.Duration
 }
 
 type MattermostConfig struct {
@@ -109,6 +112,9 @@ func LoadFromLookupEnv(lookup func(string) (string, bool)) (Config, error) {
 	} else {
 		cfg.Bale.AllowedChatIDs = allowedChatIDs
 	}
+	cfg.Bale.AllowedHashtags = parseStringList(env(lookup, "BALE_ALLOWED_HASHTAGS", ""))
+	cfg.Bale.StripMentions = normalizeMentions(parseStringList(env(lookup, "BALE_STRIP_MENTIONS", "")))
+	cfg.Bale.StripPhrases = parseStringList(env(lookup, "BALE_STRIP_PHRASES", ""))
 
 	if cfg.Bale.Token == "" {
 		validationErrs = append(validationErrs, "BALE_BOT_TOKEN is required")
@@ -260,6 +266,59 @@ func parseLogLevel(raw string) slog.Level {
 	default:
 		return slog.LevelInfo
 	}
+}
+
+func parseStringList(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+
+	parts := strings.Split(raw, ",")
+	values := make([]string, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if _, ok := seen[part]; ok {
+			continue
+		}
+		seen[part] = struct{}{}
+		values = append(values, part)
+	}
+	if len(values) == 0 {
+		return nil
+	}
+	return values
+}
+
+func normalizeMentions(mentions []string) []string {
+	if len(mentions) == 0 {
+		return nil
+	}
+
+	normalized := make([]string, 0, len(mentions))
+	seen := make(map[string]struct{}, len(mentions))
+	for _, mention := range mentions {
+		mention = strings.TrimSpace(mention)
+		if mention == "" {
+			continue
+		}
+		if !strings.HasPrefix(mention, "@") {
+			mention = "@" + mention
+		}
+		if _, ok := seen[mention]; ok {
+			continue
+		}
+		seen[mention] = struct{}{}
+		normalized = append(normalized, mention)
+	}
+	if len(normalized) == 0 {
+		return nil
+	}
+	return normalized
 }
 
 func normalizeURL(raw string) string {

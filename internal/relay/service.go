@@ -37,6 +37,9 @@ type Store interface {
 
 type Config struct {
 	AllowedChatIDs     map[int64]struct{}
+	AllowedHashtags    []string
+	StripMentions      []string
+	StripPhrases       []string
 	PollTimeout        time.Duration
 	RetryBaseDelay     time.Duration
 	RetryMaxDelay      time.Duration
@@ -71,6 +74,9 @@ func NewService(source UpdateSource, poster Poster, store Store, logger *slog.Lo
 	if len(cfg.AllowedUpdateKinds) == 0 {
 		cfg.AllowedUpdateKinds = []string{"message"}
 	}
+	cfg.AllowedHashtags = normalizeList(cfg.AllowedHashtags)
+	cfg.StripMentions = normalizeMentions(cfg.StripMentions)
+	cfg.StripPhrases = normalizeList(cfg.StripPhrases)
 
 	return &Service{
 		source: source,
@@ -169,8 +175,17 @@ func (s *Service) ProcessUpdate(ctx context.Context, update bale.Update) error {
 		return s.confirmCursor(ctx, update.UpdateID)
 	}
 
+	msg.Text = s.sanitizeText(msg.Text)
+
 	if msg.NormalizedText() == "" && len(msg.NormalizedUnsupportedKinds()) == 0 {
 		if err := s.store.MarkSkipped(ctx, update.UpdateID, "empty message"); err != nil {
+			return err
+		}
+		return s.confirmCursor(ctx, update.UpdateID)
+	}
+
+	if !s.matchesAllowedHashtag(msg.NormalizedText()) {
+		if err := s.store.MarkSkipped(ctx, update.UpdateID, "missing allowed hashtag"); err != nil {
 			return err
 		}
 		return s.confirmCursor(ctx, update.UpdateID)
@@ -228,6 +243,45 @@ func (s *Service) isAllowedChat(chatID int64) bool {
 	return allowed
 }
 
+func (s *Service) matchesAllowedHashtag(text string) bool {
+	if len(s.cfg.AllowedHashtags) == 0 {
+		return true
+	}
+	for _, hashtag := range s.cfg.AllowedHashtags {
+		if strings.Contains(text, hashtag) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Service) sanitizeText(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
+	}
+
+	for _, mention := range s.cfg.StripMentions {
+		text = strings.ReplaceAll(text, mention, "")
+	}
+	for _, phrase := range s.cfg.StripPhrases {
+		text = strings.ReplaceAll(text, phrase, "")
+	}
+
+	lines := strings.Split(text, "\n")
+	sanitized := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = strings.Join(strings.Fields(line), " ")
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		sanitized = append(sanitized, line)
+	}
+
+	return strings.TrimSpace(strings.Join(sanitized, "\n"))
+}
+
 func relayMessageFromUpdate(update bale.Update) model.RelayMessage {
 	if update.Message == nil {
 		return model.RelayMessage{
@@ -257,6 +311,57 @@ func relayMessageFromUpdate(update bale.Update) model.RelayMessage {
 		UnsupportedKinds: unsupportedKinds(msg),
 		OccurredAt:       time.Unix(msg.Date, 0).UTC(),
 	}
+}
+
+func normalizeList(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+
+	normalized := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		normalized = append(normalized, value)
+	}
+	if len(normalized) == 0 {
+		return nil
+	}
+	return normalized
+}
+
+func normalizeMentions(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+
+	normalized := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if !strings.HasPrefix(value, "@") {
+			value = "@" + value
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		normalized = append(normalized, value)
+	}
+	if len(normalized) == 0 {
+		return nil
+	}
+	return normalized
 }
 
 func senderDetails(msg *bale.Message) (int64, string) {

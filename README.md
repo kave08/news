@@ -82,6 +82,9 @@ Webhook mode:
 ```env
 BALE_BOT_TOKEN=replace-me
 BALE_ALLOWED_CHAT_IDS=-1001234567890
+BALE_ALLOWED_HASHTAGS=#پیام_دریافتی
+BALE_STRIP_MENTIONS=@tehran_alarm
+BALE_STRIP_PHRASES=پاینده باد ایران 🇮🇷
 MATTERMOST_MODE=webhook
 MATTERMOST_WEBHOOK_URL=https://mattermost.example/hooks/replace-me
 SQLITE_PATH=./data/relay.db
@@ -132,6 +135,9 @@ go test ./...
 ## Configuration Notes
 
 - `BALE_ALLOWED_CHAT_IDS` accepts a comma-separated list.
+- `BALE_ALLOWED_HASHTAGS` is optional; if set, only messages containing at least one configured hashtag are forwarded.
+- `BALE_STRIP_MENTIONS` is optional; configured mentions are removed from Bale text before sending to Mattermost.
+- `BALE_STRIP_PHRASES` is optional; exact matching phrases are removed from Bale text before sending to Mattermost.
 - `MATTERMOST_MODE` supports `webhook` and `api`.
 - `SQLITE_PATH` defaults to `./data/relay.db`.
 - News crawling is disabled by default and must be explicitly enabled.

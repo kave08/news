@@ -13,6 +13,9 @@ func TestLoadFromLookupEnvWebhookMode(t *testing.T) {
 	cfg, err := LoadFromLookupEnv(lookupFromMap(map[string]string{
 		"BALE_BOT_TOKEN":         "token",
 		"BALE_ALLOWED_CHAT_IDS":  "1001, -1002",
+		"BALE_ALLOWED_HASHTAGS":  "#news, #urgent",
+		"BALE_STRIP_MENTIONS":    "@tehran_alarm, bot_account",
+		"BALE_STRIP_PHRASES":     "first phrase, second phrase",
 		"MATTERMOST_MODE":        "webhook",
 		"MATTERMOST_WEBHOOK_URL": "https://mattermost.example/hooks/abc",
 		"BALE_POLL_TIMEOUT_SEC":  "30",
@@ -33,6 +36,15 @@ func TestLoadFromLookupEnvWebhookMode(t *testing.T) {
 	}
 	if len(cfg.Bale.AllowedChatIDs) != 2 {
 		t.Fatalf("unexpected allowed chat count: %d", len(cfg.Bale.AllowedChatIDs))
+	}
+	if len(cfg.Bale.AllowedHashtags) != 2 || cfg.Bale.AllowedHashtags[0] != "#news" {
+		t.Fatalf("unexpected allowed hashtags: %+v", cfg.Bale.AllowedHashtags)
+	}
+	if len(cfg.Bale.StripMentions) != 2 || cfg.Bale.StripMentions[1] != "@bot_account" {
+		t.Fatalf("unexpected strip mentions: %+v", cfg.Bale.StripMentions)
+	}
+	if len(cfg.Bale.StripPhrases) != 2 || cfg.Bale.StripPhrases[0] != "first phrase" {
+		t.Fatalf("unexpected strip phrases: %+v", cfg.Bale.StripPhrases)
 	}
 	if _, ok := cfg.Bale.AllowedChatIDs[-1002]; !ok {
 		t.Fatalf("expected chat id -1002 to be allowed")

@@ -50,6 +50,9 @@ func Run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		logger,
 		relay.Config{
 			AllowedChatIDs:     cfg.Bale.AllowedChatIDs,
+			AllowedHashtags:    append([]string(nil), cfg.Bale.AllowedHashtags...),
+			StripMentions:      append([]string(nil), cfg.Bale.StripMentions...),
+			StripPhrases:       append([]string(nil), cfg.Bale.StripPhrases...),
 			PollTimeout:        cfg.Bale.PollTimeout,
 			RetryBaseDelay:     time.Second,
 			RetryMaxDelay:      10 * time.Second,

@@ -49,6 +49,129 @@ func TestProcessUpdateAllowedText(t *testing.T) {
 	}
 }
 
+func TestProcessUpdateSkipsMessageWithoutAllowedHashtag(t *testing.T) {
+	t.Parallel()
+
+	service, sqliteStore, poster := newTestServiceWithConfig(t, Config{
+		AllowedChatIDs:     map[int64]struct{}{-1001: {}},
+		AllowedHashtags:    []string{"#پیام_دریافتی"},
+		PollTimeout:        time.Second,
+		RetryBaseDelay:     time.Millisecond,
+		RetryMaxDelay:      5 * time.Millisecond,
+		RetryMaxAttempts:   3,
+		AllowedUpdateKinds: []string{"message"},
+	})
+	defer sqliteStore.Close()
+
+	update := bale.Update{
+		UpdateID: 15,
+		Message: &bale.Message{
+			MessageID: 150,
+			From:      &bale.User{ID: 42, FirstName: "Ali"},
+			Chat:      bale.Chat{ID: -1001, Title: "Bale Team"},
+			Date:      1_700_000_000,
+			Text:      "hello",
+		},
+	}
+
+	if err := service.ProcessUpdate(context.Background(), update); err != nil {
+		t.Fatalf("ProcessUpdate returned error: %v", err)
+	}
+
+	record, err := sqliteStore.GetByUpdateID(context.Background(), update.UpdateID)
+	if err != nil {
+		t.Fatalf("GetByUpdateID returned error: %v", err)
+	}
+	if record.Status != model.StatusSkipped {
+		t.Fatalf("unexpected record status: %s", record.Status)
+	}
+	if len(poster.posts) != 0 {
+		t.Fatalf("expected no posts, got %d", len(poster.posts))
+	}
+}
+
+func TestProcessUpdateStripsConfiguredMentions(t *testing.T) {
+	t.Parallel()
+
+	service, sqliteStore, poster := newTestServiceWithConfig(t, Config{
+		AllowedChatIDs:     map[int64]struct{}{-1001: {}},
+		AllowedHashtags:    []string{"#پیام_دریافتی"},
+		StripMentions:      []string{"@tehran_alarm"},
+		PollTimeout:        time.Second,
+		RetryBaseDelay:     time.Millisecond,
+		RetryMaxDelay:      5 * time.Millisecond,
+		RetryMaxAttempts:   3,
+		AllowedUpdateKinds: []string{"message"},
+	})
+	defer sqliteStore.Close()
+
+	update := bale.Update{
+		UpdateID: 16,
+		Message: &bale.Message{
+			MessageID: 160,
+			From:      &bale.User{ID: 42, FirstName: "Ali"},
+			Chat:      bale.Chat{ID: -1001, Title: "Bale Team"},
+			Date:      1_700_000_000,
+			Text:      "@tehran_alarm #پیام_دریافتی متن تست",
+		},
+	}
+
+	if err := service.ProcessUpdate(context.Background(), update); err != nil {
+		t.Fatalf("ProcessUpdate returned error: %v", err)
+	}
+
+	if len(poster.posts) != 1 {
+		t.Fatalf("expected 1 post, got %d", len(poster.posts))
+	}
+	if strings.Contains(poster.posts[0].Text, "@tehran_alarm") {
+		t.Fatalf("expected mention to be stripped, got %q", poster.posts[0].Text)
+	}
+	if !strings.Contains(poster.posts[0].Text, "#پیام_دریافتی") {
+		t.Fatalf("expected hashtag to remain, got %q", poster.posts[0].Text)
+	}
+}
+
+func TestProcessUpdateStripsConfiguredPhrases(t *testing.T) {
+	t.Parallel()
+
+	service, sqliteStore, poster := newTestServiceWithConfig(t, Config{
+		AllowedChatIDs:     map[int64]struct{}{-1001: {}},
+		AllowedHashtags:    []string{"#پیام_دریافتی"},
+		StripPhrases:       []string{"پاینده باد ایران 🇮🇷"},
+		PollTimeout:        time.Second,
+		RetryBaseDelay:     time.Millisecond,
+		RetryMaxDelay:      5 * time.Millisecond,
+		RetryMaxAttempts:   3,
+		AllowedUpdateKinds: []string{"message"},
+	})
+	defer sqliteStore.Close()
+
+	update := bale.Update{
+		UpdateID: 17,
+		Message: &bale.Message{
+			MessageID: 170,
+			From:      &bale.User{ID: 42, FirstName: "Ali"},
+			Chat:      bale.Chat{ID: -1001, Title: "Bale Team"},
+			Date:      1_700_000_000,
+			Text:      "#پیام_دریافتی پاینده باد ایران 🇮🇷 متن تست",
+		},
+	}
+
+	if err := service.ProcessUpdate(context.Background(), update); err != nil {
+		t.Fatalf("ProcessUpdate returned error: %v", err)
+	}
+
+	if len(poster.posts) != 1 {
+		t.Fatalf("expected 1 post, got %d", len(poster.posts))
+	}
+	if strings.Contains(poster.posts[0].Text, "پاینده باد ایران 🇮🇷") {
+		t.Fatalf("expected phrase to be stripped, got %q", poster.posts[0].Text)
+	}
+	if !strings.Contains(poster.posts[0].Text, "متن تست") {
+		t.Fatalf("expected remaining text, got %q", poster.posts[0].Text)
+	}
+}
+
 func TestProcessUpdateDisallowedChat(t *testing.T) {
 	t.Parallel()
 
@@ -281,6 +404,27 @@ func newTestService(t *testing.T) (*Service, *store.SQLiteStore, *fakePoster) {
 
 	poster := &fakePoster{}
 	return newServiceForTest(t, sqliteStore, poster), sqliteStore, poster
+}
+
+func newTestServiceWithConfig(t *testing.T, cfg Config) (*Service, *store.SQLiteStore, *fakePoster) {
+	t.Helper()
+
+	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "relay.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	if err := sqliteStore.Init(context.Background()); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+
+	poster := &fakePoster{}
+	return NewService(
+		nil,
+		poster,
+		sqliteStore,
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		cfg,
+	), sqliteStore, poster
 }
 
 func newServiceForTest(t *testing.T, sqliteStore *store.SQLiteStore, poster *fakePoster) *Service {
