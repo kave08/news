@@ -59,9 +59,23 @@ source scripts/use-goenv.zsh
 go mod tidy
 ```
 
-### 2. Set configuration
+### 2. Prepare configuration
 
-Create a local `.env` or export variables in your shell.
+Copy the example file and fill your local secrets:
+
+```zsh
+cp .env.example .env
+```
+
+The binary auto-loads `.env` from the repo root if the file exists. Process environment variables still override values from `.env`.
+
+Validate the required fields before running:
+
+```zsh
+./scripts/check-config.sh
+```
+
+You can also skip `.env` and export variables in your shell.
 
 Webhook mode:
 

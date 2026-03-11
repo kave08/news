@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	// _ "github.com/mattn/go-sqlite3"
+	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/kave08/news/internal/model"
 )
