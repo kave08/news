@@ -32,8 +32,24 @@ type Config struct {
 	Bale       BaleConfig
 	Mattermost MattermostConfig
 	News       NewsConfig
+	Telegram   TelegramConfig
 	SQLitePath string
 	LogLevel   slog.Level
+}
+
+type TelegramConfig struct {
+	Enabled          bool
+	APIID            int
+	APIHash          string
+	Phone            string
+	Channels         []string
+	SessionPath      string
+	AllowedHashtags  []string
+	StripMentions    []string
+	StripPhrases     []string
+	RetryBaseDelay   time.Duration
+	RetryMaxDelay    time.Duration
+	RetryMaxAttempts int
 }
 
 type BaleConfig struct {
@@ -235,6 +251,51 @@ func LoadFromLookupEnv(lookup func(string) (string, bool)) (Config, error) {
 				}
 			}
 		}
+	}
+
+	if telegramEnabledRaw := strings.TrimSpace(env(lookup, "TELEGRAM_ENABLED", "")); telegramEnabledRaw != "" {
+		enabled, err := strconv.ParseBool(telegramEnabledRaw)
+		if err != nil {
+			validationErrs = append(validationErrs, "TELEGRAM_ENABLED must be a boolean")
+		} else {
+			cfg.Telegram.Enabled = enabled
+		}
+	}
+
+	if cfg.Telegram.Enabled {
+		if apiIDRaw := strings.TrimSpace(env(lookup, "TELEGRAM_API_ID", "")); apiIDRaw != "" {
+			apiID, err := strconv.Atoi(apiIDRaw)
+			if err != nil || apiID <= 0 {
+				validationErrs = append(validationErrs, "TELEGRAM_API_ID must be a positive integer")
+			} else {
+				cfg.Telegram.APIID = apiID
+			}
+		} else {
+			validationErrs = append(validationErrs, "TELEGRAM_API_ID is required when TELEGRAM_ENABLED=true")
+		}
+
+		cfg.Telegram.APIHash = strings.TrimSpace(env(lookup, "TELEGRAM_API_HASH", ""))
+		if cfg.Telegram.APIHash == "" {
+			validationErrs = append(validationErrs, "TELEGRAM_API_HASH is required when TELEGRAM_ENABLED=true")
+		}
+
+		cfg.Telegram.Phone = strings.TrimSpace(env(lookup, "TELEGRAM_PHONE", ""))
+		if cfg.Telegram.Phone == "" {
+			validationErrs = append(validationErrs, "TELEGRAM_PHONE is required when TELEGRAM_ENABLED=true")
+		}
+
+		cfg.Telegram.Channels = parseStringList(env(lookup, "TELEGRAM_CHANNELS", ""))
+		if len(cfg.Telegram.Channels) == 0 {
+			validationErrs = append(validationErrs, "TELEGRAM_CHANNELS is required when TELEGRAM_ENABLED=true")
+		}
+
+		cfg.Telegram.SessionPath = strings.TrimSpace(env(lookup, "TELEGRAM_SESSION_PATH", "./data/telegram.session"))
+		cfg.Telegram.AllowedHashtags = parseStringList(env(lookup, "TELEGRAM_ALLOWED_HASHTAGS", ""))
+		cfg.Telegram.StripMentions = normalizeMentions(parseStringList(env(lookup, "TELEGRAM_STRIP_MENTIONS", "")))
+		cfg.Telegram.StripPhrases = parseStringList(env(lookup, "TELEGRAM_STRIP_PHRASES", ""))
+		cfg.Telegram.RetryBaseDelay = time.Second
+		cfg.Telegram.RetryMaxDelay = 10 * time.Second
+		cfg.Telegram.RetryMaxAttempts = 3
 	}
 
 	if len(validationErrs) > 0 {

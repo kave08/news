@@ -301,6 +301,7 @@ func relayMessageFromUpdate(update bale.Update) model.RelayMessage {
 
 	senderID, senderLabel := senderDetails(msg)
 	return model.RelayMessage{
+		Source:           model.SourceBale,
 		UpdateID:         update.UpdateID,
 		BaleMessageID:    msg.MessageID,
 		ChatID:           msg.Chat.ID,

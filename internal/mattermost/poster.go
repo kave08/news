@@ -236,15 +236,20 @@ func (p *APIPoster) postMessage(ctx context.Context, message string, props map[s
 }
 
 func FormatMessage(msg model.RelayMessage) string {
+	sourceName := "Bale"
+	if msg.Source == model.SourceTelegram {
+		sourceName = "Telegram"
+	}
+
 	var lines []string
-	lines = append(lines, fmt.Sprintf("**Bale** · %s · %s", fallbackLabel(msg.ChatLabel, msg.ChatID), fallbackSender(msg.SenderLabel, msg.SenderID)))
+	lines = append(lines, fmt.Sprintf("**%s** · %s · %s", sourceName, fallbackLabel(msg.ChatLabel, msg.ChatID), fallbackSender(msg.SenderLabel, msg.SenderID)))
 
 	if text := msg.NormalizedText(); text != "" {
 		lines = append(lines, text)
 	}
 
 	if unsupported := msg.NormalizedUnsupportedKinds(); len(unsupported) > 0 {
-		lines = append(lines, fmt.Sprintf("_Unsupported Bale content omitted: %s_", strings.Join(unsupported, ", ")))
+		lines = append(lines, fmt.Sprintf("_Unsupported %s content omitted: %s_", sourceName, strings.Join(unsupported, ", ")))
 	}
 
 	return strings.Join(lines, "\n")

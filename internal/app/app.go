@@ -15,6 +15,7 @@ import (
 	"github.com/kave08/news/internal/news"
 	"github.com/kave08/news/internal/relay"
 	"github.com/kave08/news/internal/store"
+	"github.com/kave08/news/internal/telegram"
 )
 
 func Run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
@@ -84,6 +85,28 @@ func Run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 				MaxArticleAge:       24 * time.Hour,
 			},
 		)
+	}
+
+	if cfg.Telegram.Enabled {
+		tgService := telegram.NewService(
+			telegram.Config{
+				APIID:            cfg.Telegram.APIID,
+				APIHash:          cfg.Telegram.APIHash,
+				Phone:            cfg.Telegram.Phone,
+				Channels:         append([]string(nil), cfg.Telegram.Channels...),
+				SessionPath:      cfg.Telegram.SessionPath,
+				AllowedHashtags:  append([]string(nil), cfg.Telegram.AllowedHashtags...),
+				StripMentions:    append([]string(nil), cfg.Telegram.StripMentions...),
+				StripPhrases:     append([]string(nil), cfg.Telegram.StripPhrases...),
+				RetryBaseDelay:   cfg.Telegram.RetryBaseDelay,
+				RetryMaxDelay:    cfg.Telegram.RetryMaxDelay,
+				RetryMaxAttempts: cfg.Telegram.RetryMaxAttempts,
+			},
+			poster,
+			sqliteStore,
+			logger,
+		)
+		runners["telegram"] = tgService
 	}
 
 	return runServices(ctx, runners)

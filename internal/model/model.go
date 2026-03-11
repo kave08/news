@@ -19,7 +19,15 @@ func (s RelayStatus) IsTerminal() bool {
 	return s == StatusSent || s == StatusIgnored || s == StatusSkipped
 }
 
+type MessageSource string
+
+const (
+	SourceBale     MessageSource = "bale"
+	SourceTelegram MessageSource = "telegram"
+)
+
 type RelayMessage struct {
+	Source           MessageSource
 	UpdateID         int64
 	BaleMessageID    int64
 	ChatID           int64
@@ -129,4 +137,19 @@ type MessageRecord struct {
 	MattermostRemoteID string
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
+}
+
+type TelegramRecord struct {
+	ChannelID    int64
+	MessageID    int64
+	ChannelLabel string
+	SenderLabel  string
+	Text         string
+	Status       RelayStatus
+	Attempts     int
+	ErrorLog     string
+	RemoteID     string
+	OccurredAt   time.Time
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }

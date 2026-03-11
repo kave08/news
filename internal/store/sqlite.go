@@ -87,6 +87,22 @@ func (s *SQLiteStore) Init(ctx context.Context) error {
 			updated_at TEXT NOT NULL
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_news_articles_status ON news_articles(status)`,
+		`CREATE TABLE IF NOT EXISTS telegram_messages (
+			channel_id    INTEGER NOT NULL,
+			message_id    INTEGER NOT NULL,
+			channel_label TEXT NOT NULL DEFAULT '',
+			sender_label  TEXT NOT NULL DEFAULT '',
+			text          TEXT NOT NULL DEFAULT '',
+			status        TEXT NOT NULL DEFAULT 'received',
+			attempts      INTEGER NOT NULL DEFAULT 0,
+			error_log     TEXT NOT NULL DEFAULT '',
+			remote_id     TEXT NOT NULL DEFAULT '',
+			occurred_at   DATETIME NOT NULL,
+			created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (channel_id, message_id)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_telegram_messages_status ON telegram_messages(status)`,
 	}
 
 	for _, stmt := range statements {
@@ -368,6 +384,107 @@ func (s *SQLiteStore) updateStatus(
 		return ErrNotFound
 	}
 
+	return nil
+}
+
+func (s *SQLiteStore) UpsertTelegramMessage(ctx context.Context, channelID, messageID int64, channelLabel, senderLabel, text string, occurredAt time.Time) (model.TelegramRecord, error) {
+	record, err := s.GetTelegramMessage(ctx, channelID, messageID)
+	if err == nil {
+		return record, nil
+	}
+	if !errors.Is(err, ErrNotFound) {
+		return model.TelegramRecord{}, err
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err = s.db.ExecContext(
+		ctx,
+		`INSERT INTO telegram_messages (
+			channel_id, message_id, channel_label, sender_label, text,
+			status, attempts, error_log, remote_id, occurred_at, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		channelID, messageID, channelLabel, senderLabel, text,
+		model.StatusReceived, 0, "", "",
+		occurredAt.UTC().Format(time.RFC3339Nano),
+		now, now,
+	)
+	if err != nil {
+		return model.TelegramRecord{}, fmt.Errorf("insert telegram message (%d,%d): %w", channelID, messageID, err)
+	}
+
+	return s.GetTelegramMessage(ctx, channelID, messageID)
+}
+
+func (s *SQLiteStore) GetTelegramMessage(ctx context.Context, channelID, messageID int64) (model.TelegramRecord, error) {
+	row := s.db.QueryRowContext(
+		ctx,
+		`SELECT channel_id, message_id, channel_label, sender_label, text,
+			status, attempts, error_log, remote_id, occurred_at, created_at, updated_at
+		FROM telegram_messages
+		WHERE channel_id = ? AND message_id = ?`,
+		channelID, messageID,
+	)
+
+	var record model.TelegramRecord
+	var occurredAt, createdAt, updatedAt string
+	if err := row.Scan(
+		&record.ChannelID, &record.MessageID,
+		&record.ChannelLabel, &record.SenderLabel, &record.Text,
+		&record.Status, &record.Attempts, &record.ErrorLog, &record.RemoteID,
+		&occurredAt, &createdAt, &updatedAt,
+	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.TelegramRecord{}, ErrNotFound
+		}
+		return model.TelegramRecord{}, fmt.Errorf("query telegram message (%d,%d): %w", channelID, messageID, err)
+	}
+
+	record.OccurredAt = parseTimestamp(occurredAt)
+	record.CreatedAt = parseTimestamp(createdAt)
+	record.UpdatedAt = parseTimestamp(updatedAt)
+	return record, nil
+}
+
+func (s *SQLiteStore) MarkTelegramSent(ctx context.Context, channelID, messageID int64, remoteID string) error {
+	return s.updateTelegramStatus(ctx, channelID, messageID, model.StatusSent, true, remoteID, "")
+}
+
+func (s *SQLiteStore) MarkTelegramFailed(ctx context.Context, channelID, messageID int64, errMsg string) error {
+	return s.updateTelegramStatus(ctx, channelID, messageID, model.StatusFailed, true, "", errMsg)
+}
+
+func (s *SQLiteStore) MarkTelegramSkipped(ctx context.Context, channelID, messageID int64, reason string) error {
+	return s.updateTelegramStatus(ctx, channelID, messageID, model.StatusSkipped, false, "", reason)
+}
+
+func (s *SQLiteStore) updateTelegramStatus(
+	ctx context.Context,
+	channelID, messageID int64,
+	status model.RelayStatus,
+	incrementAttempts bool,
+	remoteID string,
+	errorLog string,
+) error {
+	stmt := `UPDATE telegram_messages SET status = ?, error_log = ?, remote_id = ?, updated_at = ?`
+	args := []any{status, errorLog, remoteID, time.Now().UTC().Format(time.RFC3339Nano)}
+
+	if incrementAttempts {
+		stmt += `, attempts = attempts + 1`
+	}
+	stmt += ` WHERE channel_id = ? AND message_id = ?`
+	args = append(args, channelID, messageID)
+
+	result, err := s.db.ExecContext(ctx, stmt, args...)
+	if err != nil {
+		return fmt.Errorf("update telegram message (%d,%d) status to %s: %w", channelID, messageID, status, err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("read rows affected for telegram message (%d,%d): %w", channelID, messageID, err)
+	}
+	if rowsAffected == 0 {
+		return ErrNotFound
+	}
 	return nil
 }
 
