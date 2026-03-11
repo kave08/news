@@ -12,15 +12,18 @@ import (
 )
 
 const (
-	defaultBaleBaseURL     = "https://tapi.bale.ai"
-	defaultSQLitePath      = "./data/relay.db"
-	defaultBalePollTimeout = 20 * time.Second
-	defaultMattermostMode  = MattermostModeWebhook
-	defaultNewsInterval    = 15 * time.Minute
-	defaultNewsMaxArticles = 5
-	defaultNewsUserAgent   = "NewsBot/1.0"
-	MattermostModeWebhook  = "webhook"
-	MattermostModeAPI      = "api"
+	defaultBaleBaseURL      = "https://tapi.bale.ai"
+	defaultSQLitePath       = "./data/relay.db"
+	defaultBalePollTimeout  = 20 * time.Second
+	defaultMattermostMode   = MattermostModeWebhook
+	defaultNewsProvider     = NewsProviderLegacyHTML
+	defaultNewsInterval     = 15 * time.Minute
+	defaultNewsMaxArticles  = 5
+	defaultNewsUserAgent    = "NewsBot/1.0"
+	MattermostModeWebhook   = "webhook"
+	MattermostModeAPI       = "api"
+	NewsProviderLegacyHTML  = "legacy_html"
+	NewsProviderBBCApproved = "bbc_approved"
 )
 
 var ErrInvalidMattermostMode = errors.New("invalid MATTERMOST_MODE")
@@ -53,6 +56,7 @@ type MattermostConfig struct {
 
 type NewsConfig struct {
 	Enabled             bool
+	Provider            string
 	Interval            time.Duration
 	MaxArticlesPerCycle int
 	RequestTimeout      time.Duration
@@ -90,6 +94,7 @@ func LoadFromLookupEnv(lookup func(string) (string, bool)) (Config, error) {
 	cfg.SQLitePath = strings.TrimSpace(env(lookup, "SQLITE_PATH", defaultSQLitePath))
 	cfg.Mattermost.Mode = strings.ToLower(strings.TrimSpace(env(lookup, "MATTERMOST_MODE", defaultMattermostMode)))
 	cfg.LogLevel = parseLogLevel(env(lookup, "LOG_LEVEL", "info"))
+	cfg.News.Provider = strings.ToLower(strings.TrimSpace(env(lookup, "NEWS_PROVIDER", defaultNewsProvider)))
 	cfg.News.Interval = defaultNewsInterval
 	cfg.News.MaxArticlesPerCycle = defaultNewsMaxArticles
 	cfg.News.RequestTimeout = 30 * time.Second
@@ -155,6 +160,14 @@ func LoadFromLookupEnv(lookup func(string) (string, bool)) (Config, error) {
 	}
 
 	if cfg.News.Enabled {
+		switch cfg.News.Provider {
+		case "", NewsProviderLegacyHTML:
+			cfg.News.Provider = NewsProviderLegacyHTML
+		case NewsProviderBBCApproved:
+		default:
+			validationErrs = append(validationErrs, "NEWS_PROVIDER must be one of legacy_html or bbc_approved")
+		}
+
 		if intervalRaw := strings.TrimSpace(env(lookup, "NEWS_INTERVAL", "")); intervalRaw != "" {
 			interval, err := time.ParseDuration(intervalRaw)
 			if err != nil || interval <= 0 {
@@ -209,15 +222,17 @@ func LoadFromLookupEnv(lookup func(string) (string, bool)) (Config, error) {
 			validationErrs = append(validationErrs, "NEWS_FETCH_DELAY_MAX_SEC must be greater than or equal to NEWS_FETCH_DELAY_MIN_SEC")
 		}
 
-		sitesRaw := strings.TrimSpace(env(lookup, "NEWS_SITES_JSON", ""))
-		if sitesRaw == "" {
-			cfg.News.Sites = defaultNewsSites()
-		} else {
-			sites, err := parseNewsSitesJSON(sitesRaw)
-			if err != nil {
-				validationErrs = append(validationErrs, err.Error())
+		if cfg.News.Provider == NewsProviderLegacyHTML {
+			sitesRaw := strings.TrimSpace(env(lookup, "NEWS_SITES_JSON", ""))
+			if sitesRaw == "" {
+				cfg.News.Sites = defaultNewsSites()
 			} else {
-				cfg.News.Sites = sites
+				sites, err := parseNewsSitesJSON(sitesRaw)
+				if err != nil {
+					validationErrs = append(validationErrs, err.Error())
+				} else {
+					cfg.News.Sites = sites
+				}
 			}
 		}
 	}
@@ -378,16 +393,6 @@ func validateNewsSites(sites []NewsSiteConfig) ([]NewsSiteConfig, error) {
 
 func defaultNewsSites() []NewsSiteConfig {
 	sites, err := validateNewsSites([]NewsSiteConfig{
-		{
-			Name:            "BBC Persian",
-			URL:             "https://www.bbc.com/persian",
-			ArticleSelector: ".bbc-1fdatix",
-			TitleSelector:   "h3",
-			SummarySelector: "p",
-			LinkSelector:    "a[href]",
-			DateSelector:    "time",
-			Keywords:        []string{"جنگ", "ایران", "حمله", "پهپاد", "اسرائیل", "آمریکا"},
-		},
 		{
 			Name:            "Iran International",
 			URL:             "https://www.iranintl.com",

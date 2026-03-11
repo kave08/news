@@ -57,7 +57,7 @@ func Run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 			RetryBaseDelay:     time.Second,
 			RetryMaxDelay:      10 * time.Second,
 			RetryMaxAttempts:   3,
-			AllowedUpdateKinds: []string{"message"},
+			AllowedUpdateKinds: []string{"message", "channel_post"},
 		},
 	)
 
@@ -65,24 +65,24 @@ func Run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		"relay": service,
 	}
 	if cfg.News.Enabled {
+		provider, err := newNewsProvider(cfg.News, logger)
+		if err != nil {
+			return err
+		}
+
 		runners["news"] = news.NewService(
 			poster,
 			sqliteStore,
 			logger,
+			provider,
 			news.Config{
 				Interval:            cfg.News.Interval,
 				MaxArticlesPerCycle: cfg.News.MaxArticlesPerCycle,
-				RequestTimeout:      cfg.News.RequestTimeout,
-				FetchDelayMin:       cfg.News.FetchDelayMin,
-				FetchDelayMax:       cfg.News.FetchDelayMax,
-				UserAgent:           cfg.News.UserAgent,
 				RetryBaseDelay:      time.Second,
 				RetryMaxDelay:       10 * time.Second,
 				RetryMaxAttempts:    3,
 				MaxArticleAge:       24 * time.Hour,
-				Sites:               toNewsSites(cfg.News.Sites),
 			},
-			&http.Client{Timeout: cfg.News.RequestTimeout},
 		)
 	}
 
@@ -130,6 +130,30 @@ func runServices(ctx context.Context, runners map[string]serviceRunner) error {
 		return err
 	}
 	return ctx.Err()
+}
+
+func newNewsProvider(cfg config.NewsConfig, logger *slog.Logger) (news.Provider, error) {
+	switch cfg.Provider {
+	case "", config.NewsProviderLegacyHTML:
+		return news.NewLegacyHTMLProvider(
+			logger,
+			news.LegacyHTMLProviderConfig{
+				RequestTimeout:   cfg.RequestTimeout,
+				FetchDelayMin:    cfg.FetchDelayMin,
+				FetchDelayMax:    cfg.FetchDelayMax,
+				UserAgent:        cfg.UserAgent,
+				RetryBaseDelay:   time.Second,
+				RetryMaxDelay:    10 * time.Second,
+				RetryMaxAttempts: 3,
+				Sites:            toNewsSites(cfg.Sites),
+			},
+			&http.Client{Timeout: cfg.RequestTimeout},
+		), nil
+	case config.NewsProviderBBCApproved:
+		return news.NewBBCApprovedProvider(), nil
+	default:
+		return nil, fmt.Errorf("unsupported news provider %q", cfg.Provider)
+	}
 }
 
 func toNewsSites(sites []config.NewsSiteConfig) []news.SiteConfig {

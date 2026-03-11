@@ -34,6 +34,9 @@ func TestLoadFromLookupEnvWebhookMode(t *testing.T) {
 	if cfg.News.Enabled {
 		t.Fatal("news should be disabled by default")
 	}
+	if cfg.News.Provider != NewsProviderLegacyHTML {
+		t.Fatalf("unexpected default news provider: %s", cfg.News.Provider)
+	}
 	if len(cfg.Bale.AllowedChatIDs) != 2 {
 		t.Fatalf("unexpected allowed chat count: %d", len(cfg.Bale.AllowedChatIDs))
 	}
@@ -95,13 +98,16 @@ func TestLoadFromLookupEnvNewsDefaults(t *testing.T) {
 	if !cfg.News.Enabled {
 		t.Fatal("expected news to be enabled")
 	}
+	if cfg.News.Provider != NewsProviderLegacyHTML {
+		t.Fatalf("unexpected provider: %s", cfg.News.Provider)
+	}
 	if cfg.News.Interval != 15*time.Minute {
 		t.Fatalf("unexpected news interval: %v", cfg.News.Interval)
 	}
 	if cfg.News.MaxArticlesPerCycle != 5 {
 		t.Fatalf("unexpected max articles: %d", cfg.News.MaxArticlesPerCycle)
 	}
-	if len(cfg.News.Sites) != 3 {
+	if len(cfg.News.Sites) != 2 {
 		t.Fatalf("unexpected site count: %d", len(cfg.News.Sites))
 	}
 }
@@ -148,6 +154,25 @@ func TestLoadFromLookupEnvNewsValidation(t *testing.T) {
 		t.Fatal("expected news validation error, got nil")
 	}
 	if !strings.Contains(err.Error(), "NEWS_INTERVAL") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoadFromLookupEnvNewsProviderValidation(t *testing.T) {
+	t.Parallel()
+
+	_, err := LoadFromLookupEnv(lookupFromMap(map[string]string{
+		"BALE_BOT_TOKEN":         "token",
+		"BALE_ALLOWED_CHAT_IDS":  "1001",
+		"MATTERMOST_MODE":        "webhook",
+		"MATTERMOST_WEBHOOK_URL": "https://mattermost.example/hooks/abc",
+		"NEWS_ENABLED":           "true",
+		"NEWS_PROVIDER":          "invalid",
+	}))
+	if err == nil {
+		t.Fatal("expected provider validation error, got nil")
+	}
+	if !strings.Contains(err.Error(), "NEWS_PROVIDER") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

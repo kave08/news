@@ -149,6 +149,33 @@ func TestRunCycleRetriesTemporaryPostFailures(t *testing.T) {
 	}
 }
 
+func TestRunCycleBBCApprovedProviderFailsFast(t *testing.T) {
+	t.Parallel()
+
+	sqliteStore := newTestStore(t)
+	defer sqliteStore.Close()
+
+	service := NewService(
+		&fakePoster{},
+		sqliteStore,
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		NewBBCApprovedProvider(),
+		Config{
+			Interval:            time.Minute,
+			MaxArticlesPerCycle: 5,
+			RetryBaseDelay:      time.Millisecond,
+			RetryMaxDelay:       5 * time.Millisecond,
+			RetryMaxAttempts:    3,
+			MaxArticleAge:       24 * time.Hour,
+		},
+	)
+
+	err := service.runCycle(context.Background())
+	if !errors.Is(err, ErrBBCApprovedProviderUnavailable) {
+		t.Fatalf("expected BBC approved provider error, got %v", err)
+	}
+}
+
 type fakePoster struct {
 	errs  []error
 	calls int
@@ -183,28 +210,36 @@ func newTestService(sqliteStore *store.SQLiteStore, poster *fakePoster, siteURL 
 		poster,
 		sqliteStore,
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		NewLegacyHTMLProvider(
+			slog.New(slog.NewTextHandler(io.Discard, nil)),
+			LegacyHTMLProviderConfig{
+				RequestTimeout:   time.Second,
+				FetchDelayMin:    0,
+				FetchDelayMax:    0,
+				UserAgent:        "test-agent",
+				RetryBaseDelay:   time.Millisecond,
+				RetryMaxDelay:    5 * time.Millisecond,
+				RetryMaxAttempts: 3,
+				Sites: []SiteConfig{{
+					Name:            "Test Site",
+					URL:             siteURL,
+					ArticleSelector: ".item",
+					TitleSelector:   "h2",
+					LinkSelector:    "a[href]",
+					DateSelector:    "time",
+					Keywords:        []string{"iran"},
+				}},
+			},
+			&http.Client{Timeout: time.Second},
+		),
 		Config{
 			Interval:            time.Minute,
 			MaxArticlesPerCycle: maxArticles,
-			RequestTimeout:      time.Second,
-			FetchDelayMin:       0,
-			FetchDelayMax:       0,
-			UserAgent:           "test-agent",
 			RetryBaseDelay:      time.Millisecond,
 			RetryMaxDelay:       5 * time.Millisecond,
 			RetryMaxAttempts:    3,
 			MaxArticleAge:       24 * time.Hour,
-			Sites: []SiteConfig{{
-				Name:            "Test Site",
-				URL:             siteURL,
-				ArticleSelector: ".item",
-				TitleSelector:   "h2",
-				LinkSelector:    "a[href]",
-				DateSelector:    "time",
-				Keywords:        []string{"iran"},
-			}},
 		},
-		&http.Client{Timeout: time.Second},
 	)
 }
 

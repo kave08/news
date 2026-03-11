@@ -21,7 +21,7 @@ The relay polls Bale updates, filters by allowed chat IDs, normalizes message co
 
 ### Optional News Monitor
 
-When `NEWS_ENABLED=true`, the same process starts a second service that fetches configured sites on an interval, extracts articles with CSS selectors, filters by keywords, deduplicates by article hash, and posts new items to the same Mattermost destination.
+When `NEWS_ENABLED=true`, the same process starts a second service that fetches configured news inputs on an interval, deduplicates them, stores them in SQLite, and posts new items to the same Mattermost destination. The current built-in runtime path is the legacy HTML provider for non-BBC sources.
 
 ## Technical Shape
 
@@ -110,6 +110,7 @@ Optional news settings:
 
 ```env
 NEWS_ENABLED=true
+NEWS_PROVIDER=legacy_html
 NEWS_INTERVAL=15m
 NEWS_MAX_ARTICLES_PER_CYCLE=5
 NEWS_REQUEST_TIMEOUT_SEC=30
@@ -118,7 +119,7 @@ NEWS_FETCH_DELAY_MAX_SEC=5
 NEWS_USER_AGENT=NewsBot/1.0
 ```
 
-`NEWS_SITES_JSON` can fully replace the built-in source list when needed.
+`NEWS_SITES_JSON` can fully replace the built-in source list when `NEWS_PROVIDER=legacy_html`.
 
 ### 3. Run the service
 
@@ -141,14 +142,17 @@ go test ./...
 - `MATTERMOST_MODE` supports `webhook` and `api`.
 - `SQLITE_PATH` defaults to `./data/relay.db`.
 - News crawling is disabled by default and must be explicitly enabled.
-- Built-in news sources are defaults only; production selectors should be reviewed regularly because site markup can change.
+- `NEWS_PROVIDER` supports `legacy_html` and `bbc_approved`.
+- The built-in default news sources are legacy HTML sources and do not include BBC.
+- `bbc_approved` is reserved for an explicit BBC-approved feed/API path and is intentionally not runnable in this repo.
+- Built-in legacy HTML sources are defaults only; production selectors should be reviewed regularly because site markup can change.
 
 ## Security
 
 - Never commit tokens, webhook URLs, or local `.env` files.
 - Keep SQLite runtime data out of version control.
 - Prefer bot-scoped Mattermost credentials instead of personal credentials.
-- Review news sources and keywords before enabling crawler mode in production.
+- Review news source terms and permissions before enabling crawler mode in production.
 
 ## Development
 

@@ -48,8 +48,9 @@ type GetUpdatesRequest struct {
 }
 
 type Update struct {
-	UpdateID int64    `json:"update_id"`
-	Message  *Message `json:"message,omitempty"`
+	UpdateID     int64    `json:"update_id"`
+	Message      *Message `json:"message,omitempty"`
+	ChannelPost  *Message `json:"channel_post,omitempty"`
 }
 
 type Message struct {

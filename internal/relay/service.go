@@ -72,7 +72,7 @@ func NewService(source UpdateSource, poster Poster, store Store, logger *slog.Lo
 		cfg.RetryMaxAttempts = 3
 	}
 	if len(cfg.AllowedUpdateKinds) == 0 {
-		cfg.AllowedUpdateKinds = []string{"message"}
+		cfg.AllowedUpdateKinds = []string{"message", "channel_post"}
 	}
 	cfg.AllowedHashtags = normalizeList(cfg.AllowedHashtags)
 	cfg.StripMentions = normalizeMentions(cfg.StripMentions)
@@ -161,7 +161,7 @@ func (s *Service) ProcessUpdate(ctx context.Context, update bale.Update) error {
 		return s.confirmCursor(ctx, update.UpdateID)
 	}
 
-	if update.Message == nil {
+	if updateMessage(update) == nil {
 		if err := s.store.MarkSkipped(ctx, update.UpdateID, "unsupported update type"); err != nil {
 			return err
 		}
@@ -283,7 +283,8 @@ func (s *Service) sanitizeText(text string) string {
 }
 
 func relayMessageFromUpdate(update bale.Update) model.RelayMessage {
-	if update.Message == nil {
+	msg := updateMessage(update)
+	if msg == nil {
 		return model.RelayMessage{
 			UpdateID:         update.UpdateID,
 			ChatLabel:        "unknown chat",
@@ -293,7 +294,6 @@ func relayMessageFromUpdate(update bale.Update) model.RelayMessage {
 		}
 	}
 
-	msg := update.Message
 	text := strings.TrimSpace(msg.Text)
 	if text == "" {
 		text = strings.TrimSpace(msg.Caption)
@@ -311,6 +311,16 @@ func relayMessageFromUpdate(update bale.Update) model.RelayMessage {
 		UnsupportedKinds: unsupportedKinds(msg),
 		OccurredAt:       time.Unix(msg.Date, 0).UTC(),
 	}
+}
+
+func updateMessage(update bale.Update) *bale.Message {
+	if update.Message != nil {
+		return update.Message
+	}
+	if update.ChannelPost != nil {
+		return update.ChannelPost
+	}
+	return nil
 }
 
 func normalizeList(values []string) []string {

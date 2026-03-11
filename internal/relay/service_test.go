@@ -49,6 +49,57 @@ func TestProcessUpdateAllowedText(t *testing.T) {
 	}
 }
 
+func TestProcessUpdateAllowedChannelPost(t *testing.T) {
+	t.Parallel()
+
+	service, sqliteStore, poster := newTestServiceWithConfig(t, Config{
+		AllowedChatIDs:     map[int64]struct{}{5875733190: {}},
+		AllowedHashtags:    []string{"#پیام_دریافتی"},
+		PollTimeout:        time.Second,
+		RetryBaseDelay:     time.Millisecond,
+		RetryMaxDelay:      5 * time.Millisecond,
+		RetryMaxAttempts:   3,
+		AllowedUpdateKinds: []string{"message", "channel_post"},
+	})
+	defer sqliteStore.Close()
+
+	update := bale.Update{
+		UpdateID: 11,
+		ChannelPost: &bale.Message{
+			MessageID: 110,
+			SenderChat: &bale.Chat{
+				ID:    5875733190,
+				Title: "Alarm Channel",
+			},
+			Chat: bale.Chat{
+				ID:    5875733190,
+				Title: "Alarm Channel",
+				Type:  "channel",
+			},
+			Date: 1_700_000_000,
+			Text: "#پیام_دریافتی متن تست",
+		},
+	}
+
+	if err := service.ProcessUpdate(context.Background(), update); err != nil {
+		t.Fatalf("ProcessUpdate returned error: %v", err)
+	}
+
+	record, err := sqliteStore.GetByUpdateID(context.Background(), update.UpdateID)
+	if err != nil {
+		t.Fatalf("GetByUpdateID returned error: %v", err)
+	}
+	if record.Status != model.StatusSent {
+		t.Fatalf("unexpected record status: %s", record.Status)
+	}
+	if len(poster.posts) != 1 {
+		t.Fatalf("expected 1 post, got %d", len(poster.posts))
+	}
+	if poster.posts[0].ChatID != 5875733190 {
+		t.Fatalf("unexpected chat id: %d", poster.posts[0].ChatID)
+	}
+}
+
 func TestProcessUpdateSkipsMessageWithoutAllowedHashtag(t *testing.T) {
 	t.Parallel()
 
